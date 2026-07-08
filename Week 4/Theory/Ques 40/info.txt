@@ -1,0 +1,21 @@
+MQTT Quality of Service (QoS) Levels Explained
+
+MQTT utilizes three distinct Quality of Service (QoS) levels to define the guarantee of delivery for a message between the sender (client) and the receiver (broker), balancing reliability against network overhead.
+1. QoS 0: At Most Once (Fire and Forget)
+Mechanism: The sender transmits the message exactly once. No acknowledgment is requested or sent. If the network drops or the receiver is offline, the message is permanently lost.
+Overhead: Lowest bandwidth and minimal latency since it requires no extra control packets.
+
+2. QoS 1: At Least Once (Acknowledged Delivery)
+Mechanism: The sender transmits the message and waits for a PUBACK (Publish Acknowledgment) from the receiver. If the acknowledgment does not arrive within a timeout window, the sender retransmits the message.
+Overhead: Moderate. It guarantees delivery but can result in duplicate messages if the PUBACK packet itself is lost in transit.
+
+3. QoS 2: Exactly Once (Assured Delivery)
+Mechanism: The sender and receiver execute a strict 4-way handshake (PUBLISH $\rightarrow$ PUBREC $\rightarrow$ PUBREL $\rightarrow$ PUBCOMP) to ensure the message is delivered exactly one time without duplicates.
+Overhead: Highest bandwidth and latency due to the heavy multi-packet verification process.
+
+Selection for an IoT Water Level Monitoring System
+For a standard IoT water level monitoring system, QoS 1 (At least once) is typically the ideal choice.
+Why QoS 1?
+Data Guarantee is Critical: If a critical water level threshold is reached (e.g., a tank filling up or an impending overflow), losing that specific packet due to a transient network drop (QoS 0) could cause catastrophic failure or missed automation triggers.
+Idempotent Data: Water level readings are continuous, state-overwriting telemetry data. If a packet is occasionally duplicated due to a delayed acknowledgment, the system simply updates the level to the same value twice. Duplicate data does not break the logic of a level monitor.
+Resource Optimization: Agricultural or municipal water monitors often run on batteries or constrained cellular networks. Upgrading to QoS 2 introduces excessive packet handshakes, which would rapidly drain the node's battery and waste network data for no functional benefit.
