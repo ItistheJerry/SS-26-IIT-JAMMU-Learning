@@ -1,5 +1,5 @@
-IoT & Drones-IIT JAMMU SUMMER SCHOOL 2026
-This repository contains my projects and code from the IoT & Drones Summer School Program at IIT Jammu (2026).
+IoT & Drones-IIT JAMMU SS Internship 2026
+This repository contains my projects and code from the IoT & Drones SS Internship Program at IIT Jammu (2026).
 
 About Me
 My name is Samyak Jain.
