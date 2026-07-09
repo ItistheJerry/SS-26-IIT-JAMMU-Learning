@@ -1,0 +1,215 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include "config.h"
+
+#define PIR_PIN     34
+#define POT_PIN     35
+#define LED1_PIN    25
+#define LED2_PIN    26
+#define LED3_PIN    27
+#define BUZZER_PIN  32
+
+int activeStart = 22;
+int activeEnd   =  6;
+
+int  alertLevel          = 0;
+bool motionActive        = false;
+unsigned long motionTime = 0;
+unsigned long lastBuzz   = 0;
+
+int currentHour = 22;
+int currentMin  = 0;
+unsigned long lastMinTick = 0;
+
+WiFiClientSecure secured_client;
+UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(PIR_PIN,    INPUT);
+  pinMode(POT_PIN,    INPUT);
+  pinMode(LED1_PIN,   OUTPUT);
+  pinMode(LED2_PIN,   OUTPUT);
+  pinMode(LED3_PIN,   OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500); Serial.print(".");
+
+  }
+  Serial.println("\nWiFi Connected!");
+  secured_client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+
+  Serial.println("Security system ARMED.");
+  Serial.println("Commands: SET_HOURS <start> <end> (e.g., SET_HOURS 22 06)");
+
+}
+
+bool isActiveWindow() {
+
+  if (activeStart < activeEnd) {
+
+    return (currentHour >= activeStart && currentHour < activeEnd);
+  } else {
+
+    return (currentHour >= activeStart || currentHour < activeEnd);
+
+  }
+
+}
+
+void flashLEDs(int level) {
+
+  digitalWrite(LED1_PIN, LOW);
+  digitalWrite(LED2_PIN, LOW);
+  digitalWrite(LED3_PIN, LOW);
+
+  unsigned long now = millis();
+  int pattern = (now / 300) % 3;
+
+  if (level >= 1) {
+
+    if (pattern == 0) digitalWrite(LED1_PIN, HIGH);
+
+  }
+  if (level >= 2) {
+
+    if (pattern == 1) digitalWrite(LED2_PIN, HIGH);
+
+  }
+  if (level >= 3) {
+
+    bool on = (now / 100) % 2;
+    digitalWrite(LED1_PIN, on); digitalWrite(LED2_PIN, on); digitalWrite(LED3_PIN, on);
+
+  }
+
+}
+
+void updateBuzzer(int level) {
+
+  unsigned long now = millis();
+  unsigned long interval = (level == 1) ? 1000 : (level == 2) ? 400 : 150;
+
+  if (level == 0) { digitalWrite(BUZZER_PIN, LOW); return; }
+
+  if (now - lastBuzz >= interval) {
+
+    lastBuzz = now;
+    digitalWrite(BUZZER_PIN, !digitalRead(BUZZER_PIN));
+
+  }
+
+}
+
+void sendTelegram(String message) {
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    bot.sendMessage(CHAT_ID, message, "");
+
+  }
+
+}
+
+void parseSerial() {
+
+  if (!Serial.available()) return;
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+
+  if (cmd.startsWith("SET_HOURS")) {
+
+    int s = cmd.substring(10, 12).toInt();
+    int e = cmd.substring(13, 15).toInt();
+    activeStart = s; activeEnd = e;
+    Serial.printf("[CMD] Active window set: %02d:00 - %02d:00\n", s, e);
+
+  }
+
+}
+
+void tickClock() {
+
+  if (millis() - lastMinTick >= 1000) {
+
+    lastMinTick = millis();
+    currentMin++;
+    if (currentMin >= 60) { currentMin = 0; currentHour = (currentHour + 1) % 24; }
+
+  }
+
+}
+
+void loop() {
+
+  tickClock();
+  parseSerial();
+
+  int potVal    = analogRead(POT_PIN);
+  int threshold = map(potVal, 0, 4095, 0, 100);
+
+  bool pirDetected = digitalRead(PIR_PIN) == HIGH;
+  bool inWindow    = isActiveWindow();
+
+  if (pirDetected && inWindow) {
+
+    if (!motionActive) {
+
+      motionActive = true;
+      motionTime   = millis();
+      alertLevel   = 1;
+
+      Serial.printf("[MOTION] Detected at %02d:%02d | Sensitivity: %d%% | Level: WARNING\n",
+                    currentHour, currentMin, threshold);
+      sendTelegram("MOTION DETECTED at shop! Time: "
+                   + String(currentHour) + ":" + String(currentMin, DEC)
+                   + " | Alert Level: WARNING");
+
+    }
+
+    unsigned long elapsed = millis() - motionTime;
+    if (elapsed > 20000 && alertLevel < 3) {
+
+      alertLevel = 3;
+      Serial.println("[ESCALATION] Level: URGENT");
+      sendTelegram("URGENT! Prolonged motion at shop! Immediate action required!");
+    } else if (elapsed > 10000 && alertLevel < 2) {
+
+      alertLevel = 2;
+      Serial.println("[ESCALATION] Level: ALARM");
+      sendTelegram("ALARM! Motion persists at shop!");
+
+    }
+
+  } else {
+
+    motionActive = false;
+    alertLevel   = 0;
+
+  }
+
+  flashLEDs(alertLevel);
+  updateBuzzer(alertLevel);
+
+  delay(50);
+
+}
+
+config.h
+
+#define WIFI_SSID   "YourWiFi"
+#define WIFI_PASSWORD "YourPass"
+#define BOT_TOKEN   "YOUR_TELEGRAM_BOT_TOKEN"
+#define CHAT_ID     "YOUR_CHAT_ID"
+
+Serial Commands
+
+SET_HOURS 22 06    -> Active 10PM to 6AM
+SET_HOURS 08 18    -> Active 8AM to 6PM
