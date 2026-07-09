@@ -1,0 +1,206 @@
+Code
+
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <LiquidCrystal_I2C.h>
+#include "config.h"
+
+#define SOIL_PIN    A0
+#define LDR_PIN      5
+#define RELAY_PIN    4
+#define BUTTON_PIN  14
+
+#define DRY_THRESHOLD  30
+#define WET_THRESHOLD  70
+
+#define READ_INTERVAL     (30UL * 60 * 1000)
+#define LOCKOUT_DURATION  ( 5UL * 60 * 1000)
+
+unsigned long lastRead      = 0;
+unsigned long lockoutStart  = 0;
+bool          manualLockout = false;
+bool          pumpOn        = false;
+unsigned long lastWatered   = 0;
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(RELAY_PIN,  OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(RELAY_PIN, LOW);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Plant Watering");
+  lcd.setCursor(0, 1);
+  lcd.print("System Starting");
+  delay(2000);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  lcd.clear();
+  lcd.print("Connecting WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500);
+    lcd.print(".");
+
+  }
+  lcd.clear();
+  lcd.print("WiFi Connected!");
+  delay(1500);
+
+}
+
+int readMoisturePct() {
+
+  int raw = analogRead(SOIL_PIN);
+  return map(raw, 1023, 0, 0, 100);
+
+}
+
+bool isRaining() {
+
+  return (digitalRead(LDR_PIN) == LOW);
+
+}
+
+void setPump(bool on) {
+
+  pumpOn = on;
+  digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+  if (on) lastWatered = millis();
+
+}
+
+void logToSheets(int moisture, bool raining, bool pumped) {
+
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+
+  String url = String(SHEET_URL)
+             + "?moisture=" + moisture
+             + "&rain=" + (raining ? "1" : "0")
+             + "&pump=" + (pumped ? "1" : "0");
+
+  http.begin(client, url);
+  http.GET();
+  http.end();
+
+}
+
+void updateLCD(int moisture, String mode) {
+
+  unsigned long elapsed = (millis() - lastWatered) / 1000 / 60;
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("M:" + String(moisture) + "% " + mode);
+  lcd.setCursor(0, 1);
+  if (lastWatered == 0) {
+
+    lcd.print("Last: Never");
+  } else {
+
+    lcd.print("Last: " + String(elapsed) + "min ago");
+
+  }
+
+}
+
+void loop() {
+
+  unsigned long now = millis();
+
+  if (digitalRead(BUTTON_PIN) == LOW) {
+
+    delay(50);
+    if (digitalRead(BUTTON_PIN) == LOW) {
+
+      Serial.println("[MANUAL] Override activated, pump ON for 1 min");
+      setPump(true);
+      delay(60000);
+      setPump(false);
+      manualLockout = true;
+      lockoutStart  = millis();
+
+    }
+
+  }
+
+  if (manualLockout && (now - lockoutStart >= LOCKOUT_DURATION)) {
+
+    manualLockout = false;
+    Serial.println("[LOCKOUT] Manual lockout released.");
+
+  }
+
+  if (now - lastRead >= READ_INTERVAL) {
+
+    lastRead = now;
+
+    int  moisture = readMoisturePct();
+    bool raining  = isRaining();
+    bool pump     = false;
+    String mode;
+
+    if (manualLockout) {
+
+      mode = "LOCKOUT";
+      Serial.println("[SKIP] Manual lockout active. Skipping auto water.");
+    } else if (raining) {
+
+      mode = "RAIN";
+      Serial.printf("[SKIP] Rain detected (LDR dark). Moisture=%d%%\n", moisture);
+    } else if (moisture < DRY_THRESHOLD) {
+
+      mode = "AUTO-WATER";
+      setPump(true);
+      delay(30000);
+      setPump(false);
+      pump = true;
+      Serial.printf("[WATERED] Moisture was %d%%. Pump activated.\n", moisture);
+    } else if (moisture > WET_THRESHOLD) {
+
+      mode = "WET";
+      Serial.printf("[SKIP] Soil too wet (%d%%). No watering.\n", moisture);
+    } else {
+
+      mode = "OPTIMAL";
+      Serial.printf("[OK] Moisture optimal (%d%%). No action.\n", moisture);
+
+    }
+
+    updateLCD(moisture, mode);
+    logToSheets(moisture, raining, pump);
+
+  }
+
+}
+
+Google Apps Script
+
+function doGet(e) {
+
+  var sheet = SpreadsheetApp.openById("YOUR_SHEET_ID").getActiveSheet();
+  var timestamp = new Date();
+  var moisture  = e.parameter.moisture;
+  var rain      = e.parameter.rain == "1" ? "YES" : "NO";
+  var pump      = e.parameter.pump  == "1" ? "YES" : "NO";
+
+  sheet.appendRow([timestamp, moisture + "%", rain, pump]);
+  return ContentService.createTextOutput("OK");
+
+}
+
+config.h
+
+#define WIFI_SSID     "YourWiFiName"
+#define WIFI_PASSWORD "YourWiFiPass"
+#define SHEET_URL     "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"
