@@ -1,0 +1,60 @@
+What I built
+This assignment pushed me to go beyond theory and actually build things that work. Across the three modules I worked on a range of projects, from fetching live weather data via REST APIs and comparing it with a physical DHT11 sensor, to designing a full flood-detection node using an HC-SR04 ultrasonic sensor with rolling averages and a live Chart.js dashboard. I also built the logic for a smart door lock that generates and sends OTPs via Bluetooth, and a greenhouse controller that manages three separate relay outputs using bang-bang control with hysteresis.
+
+Each project forced me to confront a different challenge. The weather API project taught me that theory about APIs and JSON parsing is one thing, but when parsing fails at 2 AM because of a missing field in the response, you learn to read documentation carefully. The greenhouse controller made me appreciate why delay() is dangerous in real systems. Once I switched to millis()-based timing my LCD updated smoothly without blocking the sensor reads.
+
+What I learned
+
+The biggest lesson from this module is that real IoT is about reliability, not just functionality. It's easy to make something work at once. Making it work consistently, at 3 AM, when the Wi-Fi drops, when the sensor gives a noisy reading, or when the broker goes down, that's the real challenge.
+
+I learned to use rolling averages to filter noisy sensor data, which made a real difference in the ultrasonic readings for the flood detection project. I learned why MQTT is preferred over HTTP for IoT, not just as a memorized fact but because I saw the overhead difference firsthand when I tried a quick HTTP polling approach first and it clearly wasn't practical for constrained devices.
+
+Security was another eye-opener. Writing the vulnerability analysis for Q49 made me realize how casually I had been treating credentials in my own test code. Seeing how trivially a public GitHub repo can expose a Wi-Fi password changed how I think about every line I write.
+
+Git also became more than just a way to save code. The discipline of meaningful commits, writing clear messages and committing after each feature rather than dumping everything at the end, made it much easier to trace back when something broke.
+
+Struggles that taught me the most
+
+Getting JSON parsing right in the weather API project genuinely took me hours. ArduinoJson is powerful but unforgiving, a wrong document size or a missing const char* cast and nothing works. I learned to use the ArduinoJson assistant tool online, and that habit of checking documentation before assuming will stay with me.
+
+The OTP door lock project was frustrating initially because I kept using delay() for the 30-second countdown timer, which froze the keypad input. Switching to millis() was a revelation, the system stayed responsive while counting down in the background. That one change made the entire project feel professional.
+My next IOT Project:
+
+The goal is to build a low-altitude, semi-autonomous, or tethered/buoyant airborne sensor network that provides persistent, real-time, micro-climate weather analysis to a ground-based processing network.
+1. The Core Problem & Value Proposition
+Standard weather stations are fixed to the ground and spaced kilometers apart, completely missing vertical atmospheric gradients and hyper-local micro-climate shifts (e.g., thermal inversions, localized wind shear, or micro-level air pollution pockets). Moving weather satellites provide macro-data but lack local granularity. AWATS bridges this gap by providing continuous, multi-altitude atmospheric telemetry directly to a local ground network for immediate processing.
+2. Hardware Architecture & Node Design
+Because this system stays in the air, the primary constraints are weight (payload capacity), power consumption, and aerodynamic stability.
+Airborne Platform: A network of high-altitude, weather-resistant helikites (a hybrid of a kite and a helium balloon) or semi-autonomous tethered blimps. Unlike drones, they require zero power to stay aloft, ensuring true persistence.
+Microcontroller: ESP32-S3 or STM32WB series. The ESP32-S3 offers excellent low-power modes, dual-core processing for handling sensor arrays, and native Wi-Fi/Bluetooth.
+Sensor Payload (The Analysis Trail):
+BME280 / BME680: For highly accurate ambient temperature, humidity, and barometric pressure (essential for calculating exact altitude changes). The 680 also adds gas/air quality sensing ($VOCs$).
+Anemometer & Wind Vane (Ultrasonic/Solid-State): Lightweight, non-moving ultrasonic wind sensors to measure wind speed and direction without mechanical wear.
+OPT3001 or Ambient Light Sensor: To measure solar irradiance and cloud cover density.
+Sensirion SPS30 (Optional): Particulate matter ($PM_{1.0}$, $PM_{2.5}$, $PM_{10}$) for pollution gradient tracking.
+Power Management: A lightweight 3.7V LiPo battery coupled with flexible, ultra-thin solar films wrapped around the top of the balloon/blimp envelope, managed by a TP4056 or a dedicated solar energy harvesting IC to allow indefinite daytime operation and overnight survival.
+3. Connectivity & Edge Network Topology
+Air-to-ground communication requires a reliable, long-range link that handles altitude gradients.
+[Airborne Node] --(LoRa Point-to-Point / 868-915 MHz)--> [Ground Base Station / Gateway]
+                                                                  |
+                                                           (Wi-Fi / Ethernet)
+                                                                  |
+                                                       [Local Edge Processing Node]
+
+Air-to-Ground Link: LoRa (RFM95W module) running on 868 MHz / 915 MHz (or local license-free bands). Because the airborne node has a clear line-of-sight (LoS) to the ground, LoRa can easily achieve ranges of 10–15 km with minimal power consumption ($<25\text{mW}$ transmission power).
+Network Topology: A linear "trail" network. Nodes at varying altitudes ($50\text{m}$, $100\text{m}$, $200\text{m}$) form a vertical or staggered daisy-chain, passing data down to a singular, robust ground-based Gateway.
+4. Data Processing, Cloud Pipeline, and Visualization
+Instead of sending raw, noisy sensor data straight to the cloud, the system utilizes Edge Computing at the ground station to calculate weather trends before backhauling.
+Ground Station / Edge Processor: A Raspberry Pi 4 or 5 acts as the gateway. It receives the raw packet streams via an attached LoRa HAT, decodes them, and runs local algorithms (e.g., calculating dew points, pressure tendencies, and wind shear vectors).
+Ingestion Protocols: The Raspberry Pi runs a local Mosquitto MQTT Broker. Data is packaged into clean JSON payloads.
+Cloud Infrastructure: Data is securely bridged from the local broker to AWS IoT Core using TLS mutual authentication.
+Storage: * InfluxDB (Time-Series Database): Ideal for rapid, timestamped weather data streams.
+AWS S3: For long-term cold storage of historical climate trails to train local forecasting models.
+Visualization: A public-facing Grafana Dashboard displaying real-time vertical profiles of the atmosphere (e.g., a 3D graph or multi-layered line charts showing how temperature and wind speed change relative to the altitude of the nodes).
+5. Actionable Alerts & Automation
+Micro-Forecast Engine: If the barometric pressure drops drastically over a 3-hour window ($>3\text{ hPa}$), indicating an incoming storm or severe weather anomaly, a local processing script triggers immediate action.
+Alerting Mechanism: Integration with a Discord Webhook or Telegram Bot API that automatically blasts urgent micro-climate warnings (e.g., "High wind shear detected at 150m elevation. Immediate grounding advised for local UAV operations.") to local agricultural groups, drone pilots, or disaster management teams.
+6. Budget, Scaling, & Real-World Impact
+Cost per Airborne Node: Approximately 2,500 - 3,500 INR (higher than the river monitor due to the lightweight ultrasonic wind sensors, solar film, and helium/envelope costs).
+Pilot Deployment: A 3-node vertical trail system (deployed at varying heights using a high-tensile, lightweight nylon tether) over a local micro-climate zone (like a valley, micro-farm, or urban heat island).
+The Impact: This isn't just a basic weather station you buy off the shelf. This system unlocks the ability to map the Boundary Layer of the atmosphere in real-time. It provides micro-farming communities with exact frost/dew predictions, gives localized pollution gradient data to environmental researchers, and creates a predictive model for micro-weather changes that ground-based stations are fundamentally blind to.
