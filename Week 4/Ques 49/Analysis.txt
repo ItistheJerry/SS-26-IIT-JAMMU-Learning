@@ -1,0 +1,19 @@
+Vulnerability 1, hardcoded Wi-Fi credentials in source code
+
+const char* password = "wifi12345"; When this code is pushed to a GitHub repository, even a private one that could accidentally be made public, the Wi-Fi password is exposed for anyone to read. Automated bots constantly scan GitHub for leaked credentials. An attacker who finds this can join the Wi-Fi network without permission, intercept traffic from all devices on it, perform man-in-the-middle attacks on the IoT sensors, or use the connection for illegal activity. If the password is reused elsewhere, which is common, those accounts become vulnerable too. Severity: high.
+
+Vulnerability 2, connecting to a public or unsecured Wi-Fi network
+
+Public Wi-Fi has no encryption between device and router. Any other device on that network can sniff traffic with tools like Wireshark, intercept MQTT messages from the sensor, or perform an evil twin attack, setting up a hotspot with the same SSID "PublicWiFi" so the ESP8266 automatically connects to it, routing all data through the attacker's machine. Severity: high.
+
+Vulnerability 3, unauthenticated MQTT broker on unencrypted port 1883
+
+client.setServer(broker, 1883); with no username or password. The public HiveMQ broker on port 1883 uses no encryption and no authentication. Anyone on the internet can subscribe to the topic and read all sensor data, or publish fake data to corrupt the system. For a water level monitor or health device this is a serious privacy and integrity issue, since port 1883 sends everything in plaintext, readable by any network observer. Severity: critical.
+
+Vulnerability 4, sensitive data published with no encryption or validation
+
+client.publish(topic, payload.c_str()); sends sensor data as a plain, unvalidated string with no integrity check. An attacker who intercepts or injects messages can modify readings before they reach the cloud, causing wrong alerts or decisions, inject arbitrary payloads, or replay old readings to fool the system. For safety-critical IoT like flood detection or health monitors, false data is dangerous. Severity: medium-high.
+
+Vulnerability 5, blind execution of incoming MQTT commands
+
+The callback blindly executes incoming command strings, for example system(receivedCommand). This is a remote code execution vulnerability, arguably the worst in embedded security. Since the broker is public and unauthenticated (vulnerability 3), anyone on the internet can publish a command to iot/commands and the device executes it without validation. An attacker could reset the device, change Wi-Fi credentials, disable sensors, or in extreme cases take full control and turn the device into a bot for DDoS attacks, similar to the Mirai botnet. Severity: critical.
