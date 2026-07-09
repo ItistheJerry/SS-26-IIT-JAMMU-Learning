@@ -1,0 +1,51 @@
+Design Challenge, IoT for Jammu Smart City
+
+Jammu, the winter capital of J&K, is on the cusp of a digital transformation. As the government pushes the Smart City Mission forward, IoT-enabled infrastructure can dramatically improve daily life for Jammu's residents, from cleaner air to unclogged traffic. I propose a monitoring and management system for three high-impact urban areas: street lighting, air quality, and waste bin fill levels. These were chosen because they directly affect citizen quality of life and have proven, low-cost IoT solutions.
+
+System 1, Smart Street Lighting
+
+The problem: Jammu's street lights often stay on throughout the day and turn off exactly when needed most, late at night, due to timer misconfiguration or fuse failures. This wastes electricity and leaves dark pockets that affect public safety.
+
+Proposed solution: deploy LDR sensors on each street light pole. When ambient light drops below a threshold, the light turns on automatically. A PIR motion sensor is added to detect pedestrian activity, if no motion is detected for 10 minutes after midnight, lights dim to 40% brightness to save power.
+
+Hardware per node: NodeMCU ESP8266 for Wi-Fi connectivity, LDR to detect ambient daylight, PIR sensor to detect pedestrian presence, relay module to control the streetlight circuit.
+
+Data flow: LDR + PIR sensor to ESP8266 to MQTT to AWS IoT Core to Grafana dashboard. City engineers see a live map showing which lights are on or off, any failures, and power consumption per zone.
+
+Estimated cost per node: 480 rupees (ESP8266 180, LDR 10, PIR 60, relay 80, PCB and housing 150).
+
+System 2, Air Quality Monitoring
+
+The problem: Jammu faces serious air pollution, especially in winters when biomass burning, vehicle emissions, and temperature inversions trap pollutants near ground level. Without real-time data the city can't issue health advisories or take targeted action.
+
+Proposed solution: deploy MQ-135 gas sensor nodes at key intersections and parks. The sensor measures CO2, NH3, NOx, alcohol, benzene and smoke. Each node reports PM2.5-equivalent readings every 5 minutes and triggers an alert if levels exceed safe thresholds, AQI above 150.
+
+Hardware per node: ESP32 for Wi-Fi and BLE, MQ-135 multi-gas sensor, DHT22 for temperature and humidity which affects AQI calculation, solar panel and Li-Ion battery for self-powered outdoor operation.
+
+Data flow: MQ-135 + DHT22 to ESP32 to HTTPS POST to Azure IoT Hub to Power BI dashboard to SMS alert. Citizens can view a real-time AQI map via a city web portal, and alerts go to the municipal corporation when AQI crosses 200 in any zone.
+
+Estimated cost per node: 620 rupees (ESP32 250, MQ-135 80, DHT22 90, solar and battery 200).
+
+System 3, Smart Waste Bin Fill Level Monitor
+
+The problem: municipal garbage trucks in Jammu follow fixed routes on fixed schedules, collecting from bins whether full or nearly empty. This wastes fuel and labor and causes overflow in high-traffic areas like Raghunath Bazaar and Canal Road.
+
+Proposed solution: mount an HC-SR04 ultrasonic sensor inside each large waste bin to measure distance from lid to waste surface. When a bin is more than 80% full, it's flagged for collection, and the fleet management system dispatches trucks only to bins that need emptying, dynamic routing.
+
+Hardware per node: ESP8266 as a low-cost Wi-Fi controller, HC-SR04 to measure fill distance, 18650 Li-Ion battery for weeks of operation per charge, waterproof enclosure to protect electronics outdoors.
+
+Data flow: HC-SR04 to ESP8266 to MQTT to Google Firebase to fleet management app. Drivers see a phone app showing only bins that are 80%+ full, improving collection efficiency by an estimated 35-40%.
+
+Estimated cost per node: 750 rupees (ESP8266 180, HC-SR04 70, battery and charger 250, enclosure 250).
+
+Consolidated cost summary
+
+System | Nodes (Pilot) | Cost per Node | Pilot Budget
+Street Lighting | 200 lights | 480 | 96,000
+Air Quality | 20 intersections | 620 | 12,400
+Waste Bins | 100 bins | 750 | 75,000
+Total | 320 nodes | - | 1,83,400
+
+For a city of Jammu's scale, roughly 6.5 lakh population, a full deployment across all wards would cost approximately 25-40 lakh rupees, a fraction of the annual savings in electricity and municipal fleet costs.
+
+Conclusion: smart city IoT isn't just about technology, it's about making governance efficient and life better. The three systems proposed, street lighting, air quality, and waste management, have quick ROI, proven technology, and can be deployed incrementally. Starting with a pilot in one ward, results can be measured and the system scaled city-wide. Jammu is ready for this transformation, and IoT is the tool to make it happen.
