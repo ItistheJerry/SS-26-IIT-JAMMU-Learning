@@ -59,7 +59,6 @@ Exporting logs to health_log.csv
 The raw lines printed to the console are fully CSV-compliant. You can easily highlight, copy the text out of the Serial Monitor terminal, paste it directly into an empty file, and save it as health_log.csv for analysis in Excel or Python.
 
 Terminal Formatting Output Example
-Plaintext
 [MODE] LDR Simulation Mode
 Move the LDR slider in Wokwi to simulate different readings.
 
@@ -83,4 +82,5 @@ Timestamp(ms), HR(bpm), SpO2(%), Status
   SpO2       : 91 %
   Status     : LOW SPO2
   ALERT! Red LED ON
+-----------------------------
 -----------------------------
