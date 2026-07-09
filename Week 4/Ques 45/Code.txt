@@ -1,0 +1,183 @@
+#include <DHT.h>
+#include <LiquidCrystal_I2C.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include "config.h"
+
+#define DHT_PIN       4
+#define DHT_TYPE  DHT11
+#define LDR_PIN      34
+#define HEATER_PIN   25
+#define FAN_PIN      26
+#define LIGHT_PIN    27
+
+#define TEMP_LOW      18.0
+#define TEMP_HIGH     22.0
+#define TEMP_HYST      1.0
+#define HUM_LOW       60.0
+#define HUM_HIGH      70.0
+#define LDR_THRESHOLD 500
+
+#define LIGHT_ON_DURATION  (12UL * 60 * 60 * 1000)
+unsigned long lightOnTime = 0;
+bool lightTracking = false;
+
+int ldrSamples[10];
+int ldrIndex = 0;
+bool ldrFull = false;
+
+int ldrAverage() {
+
+  int n = ldrFull ? 10 : ldrIndex;
+  if (n == 0) return 0;
+  long sum = 0;
+  for (int i = 0; i < n; i++) sum += ldrSamples[i];
+  return sum / n;
+
+}
+
+void ldrUpdate() {
+
+  ldrSamples[ldrIndex] = analogRead(LDR_PIN);
+  ldrIndex = (ldrIndex + 1) % 10;
+  if (ldrIndex == 0) ldrFull = true;
+
+}
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+int lcdPage = 0;
+unsigned long lastLCDSwitch = 0;
+#define LCD_CYCLE_MS 3000
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+WiFiClient   wifiClient;
+PubSubClient mqtt(wifiClient);
+unsigned long lastMQTT = 0;
+
+bool heaterOn = false;
+bool fanOn    = false;
+
+void setup() {
+
+  Serial.begin(115200);
+  dht.begin();
+
+  pinMode(HEATER_PIN, OUTPUT);
+  pinMode(FAN_PIN,    OUTPUT);
+  pinMode(LIGHT_PIN,  OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.print("Greenhouse Init");
+  delay(2000);
+  lcd.clear();
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting WiFi");
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  Serial.println(" Connected!");
+
+  mqtt.setServer("broker.hivemq.com", 1883);
+
+}
+
+void updateLCD(float temp, float hum, int ldr) {
+
+  if (millis() - lastLCDSwitch < LCD_CYCLE_MS) return;
+  lastLCDSwitch = millis();
+  lcdPage = (lcdPage + 1) % 4;
+  lcd.clear();
+
+  switch (lcdPage) {
+
+    case 0:
+      lcd.setCursor(0,0); lcd.print("Temperature:");
+      lcd.setCursor(0,1); lcd.printf("%.1f C  %s", temp, heaterOn ? "[HEAT]" : fanOn ? "[FAN]" : "[OK]");
+      break;
+    case 1:
+      lcd.setCursor(0,0); lcd.print("Humidity:");
+      lcd.setCursor(0,1); lcd.printf("%.0f %%  %s", hum,
+        hum < HUM_LOW ? "[LOW]" : hum > HUM_HIGH ? "[HIGH]" : "[OK]");
+      break;
+    case 2:
+      lcd.setCursor(0,0); lcd.print("Light Level:");
+      lcd.setCursor(0,1); lcd.printf("%d  Light:%s", ldr, digitalRead(LIGHT_PIN) ? "ON" : "OFF");
+      break;
+    case 3:
+      lcd.setCursor(0,0); lcd.print("Status:");
+      lcd.setCursor(0,1);
+      lcd.print(String(heaterOn?"H ":"") + String(fanOn?"F ":"") + String(digitalRead(LIGHT_PIN)?"L ":""));
+      if (!heaterOn && !fanOn && !digitalRead(LIGHT_PIN)) lcd.print("All OFF - OK");
+      break;
+
+  }
+
+}
+
+void publishMQTT(float temp, float hum, int ldr) {
+
+  if (!mqtt.connected()) {
+
+    mqtt.connect("ESP32_Greenhouse");
+
+  }
+  if (millis() - lastMQTT < 10000) return;
+  lastMQTT = millis();
+
+  mqtt.publish("greenhouse/temp",     String(temp).c_str());
+  mqtt.publish("greenhouse/humidity", String(hum).c_str());
+  mqtt.publish("greenhouse/light",    String(ldr).c_str());
+  mqtt.publish("greenhouse/heater",   heaterOn ? "1" : "0");
+  mqtt.publish("greenhouse/fan",      fanOn    ? "1" : "0");
+  Serial.println("[MQTT] Published all parameters.");
+
+}
+
+void loop() {
+
+  float temp = dht.readTemperature();
+  float hum  = dht.readHumidity();
+
+  if (isnan(temp) || isnan(hum)) {
+
+    Serial.println("[ERROR] DHT11 read failed!");
+    delay(2000);
+    return;
+
+  }
+
+  ldrUpdate();
+  int ldrAvg = ldrAverage();
+
+  if (temp < TEMP_LOW - TEMP_HYST) {
+
+    heaterOn = true; fanOn = false;
+  } else if (temp > TEMP_HIGH + TEMP_HYST) {
+
+    heaterOn = false; fanOn = true;
+  } else if (temp >= TEMP_LOW && temp <= TEMP_HIGH) {
+
+    heaterOn = false; fanOn = false;
+
+  }
+
+  digitalWrite(HEATER_PIN, heaterOn ? HIGH : LOW);
+  digitalWrite(FAN_PIN,    fanOn    ? HIGH : LOW);
+
+  bool lightNeeded = (ldrAvg < LDR_THRESHOLD);
+  digitalWrite(LIGHT_PIN, lightNeeded ? HIGH : LOW);
+
+  Serial.printf("[GH] T:%.1fC H:%.0f%% LDR:%d | Heater:%s Fan:%s Light:%s\n",
+    temp, hum, ldrAvg,
+    heaterOn ? "ON" : "OFF",
+    fanOn    ? "ON" : "OFF",
+    lightNeeded ? "ON" : "OFF");
+
+  updateLCD(temp, hum, ldrAvg);
+  publishMQTT(temp, hum, ldrAvg);
+  mqtt.loop();
+
+  delay(500);
+
+}
